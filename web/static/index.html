@@ -31,6 +31,12 @@
         </div>
       </div>
       <div class="header-right">
+        <button id="cleanup-btn" class="btn btn-warning-ghost" title="Find and remove empty/stale files">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+          </svg>
+          Cleanup
+        </button>
         <button id="delete-all-btn" class="btn btn-danger-ghost" title="Delete all visible files" style="display:none">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -132,6 +138,33 @@
       <div class="modal-footer">
         <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
         <button class="btn btn-danger" id="modal-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cleanup Modal -->
+  <div class="modal-overlay" id="cleanup-overlay" style="display:none">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 class="modal-title">Cleanup Suggestions</h3>
+        <button class="modal-close" id="cleanup-close">&times;</button>
+      </div>
+      <div class="modal-body" id="cleanup-body">
+        <div class="cleanup-loading" id="cleanup-loading">
+          <span class="spinner"></span> Analyzing files...
+        </div>
+        <div id="cleanup-content" style="display:none">
+          <div class="cleanup-summary" id="cleanup-summary"></div>
+          <div class="cleanup-groups" id="cleanup-groups"></div>
+          <div class="cleanup-empty" id="cleanup-empty" style="display:none">
+            <p>All clean! No files suggested for cleanup.</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" id="cleanup-footer" style="display:none">
+        <span class="cleanup-selected-info" id="cleanup-selected-info"></span>
+        <button class="btn btn-ghost" id="cleanup-cancel">Cancel</button>
+        <button class="btn btn-danger" id="cleanup-delete">Delete Selected</button>
       </div>
     </div>
   </div>

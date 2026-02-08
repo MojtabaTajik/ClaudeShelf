@@ -82,3 +82,27 @@ type ScanResult struct {
 	ScannedAt  time.Time   `json:"scannedAt"`
 	Categories []CategoryInfo `json:"categories"`
 }
+
+// CleanupReason describes why a file is suggested for cleanup.
+type CleanupReason string
+
+const (
+	ReasonEmptyContent CleanupReason = "empty_content"
+	ReasonEmptyFile    CleanupReason = "empty_file"
+	ReasonStale        CleanupReason = "stale"
+)
+
+// CleanupItem is a file flagged for potential cleanup.
+type CleanupItem struct {
+	FileEntry
+	Reason      CleanupReason `json:"reason"`
+	ReasonLabel string        `json:"reasonLabel"`
+	DaysSince   int           `json:"daysSince,omitempty"`
+}
+
+// CleanupResult holds grouped cleanup suggestions.
+type CleanupResult struct {
+	Items      []CleanupItem `json:"items"`
+	TotalSize  int64         `json:"totalSize"`
+	TotalCount int           `json:"totalCount"`
+}
