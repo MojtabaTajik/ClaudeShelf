@@ -536,8 +536,7 @@
     let tableHtml = '<table class="cleanup-table">' +
       '<thead><tr>' +
         '<th><input type="checkbox" id="cleanup-select-all" checked></th>' +
-        '<th>Name</th>' +
-        '<th>Path</th>' +
+        '<th>File</th>' +
         '<th>Reason</th>' +
       '</tr></thead><tbody>';
 
@@ -548,7 +547,7 @@
       // Group header row
       tableHtml += '<tr class="cleanup-group-row">' +
         '<td><input type="checkbox" class="group-checkbox" data-reason="' + reason + '" checked></td>' +
-        '<td colspan="3"><span class="group-label">' +
+        '<td colspan="2"><span class="group-label">' +
           (reasonLabels[reason] || reason) +
           ' <span class="badge">' + items.length + '</span>' +
         '</span><span class="group-desc">' + (reasonDescriptions[reason] || '') + '</span></td>' +
@@ -556,10 +555,11 @@
 
       items.forEach(item => {
         cleanupState.selected.add(item.id);
-        tableHtml += '<tr data-reason="' + reason + '">' +
+        const tags = buildTagsHtml(item);
+        tableHtml += '<tr data-reason="' + reason + '" title="' + escapeHtml(item.relPath) + '">' +
           '<td><input type="checkbox" class="item-checkbox" data-id="' + item.id + '" checked></td>' +
-          '<td><span class="cleanup-cell-name">' + escapeHtml(item.displayName || item.name) + '</span></td>' +
-          '<td><span class="cleanup-cell-path" title="' + escapeHtml(item.relPath) + '">' + escapeHtml(item.relPath) + '</span></td>' +
+          '<td><span class="cleanup-cell-name">' + escapeHtml(item.displayName || item.name) + '</span>' +
+            '<span class="cleanup-cell-tags">' + tags + '</span></td>' +
           '<td><span class="cleanup-reason reason-' + item.reason + '">' + escapeHtml(item.reasonLabel) + '</span></td>' +
         '</tr>';
       });
