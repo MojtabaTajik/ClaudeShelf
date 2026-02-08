@@ -640,7 +640,7 @@ body {
 
 /* ===== Cleanup Modal ===== */
 .modal-cleanup {
-  width: 760px;
+  width: 620px;
 }
 
 .cleanup-modal-body {
@@ -680,6 +680,7 @@ body {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+  table-layout: fixed;
 }
 
 .cleanup-table th {
@@ -704,7 +705,7 @@ body {
 }
 
 .cleanup-table th:last-child {
-  width: 120px;
+  width: 140px;
 }
 
 .cleanup-table td {
@@ -764,16 +765,17 @@ body {
 .cleanup-cell-name {
   font-weight: 500;
   color: var(--text-primary);
+  margin-right: 6px;
 }
 
-.cleanup-cell-path {
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.cleanup-cell-tags {
+  display: inline;
+}
+
+.cleanup-cell-tags .tag {
+  font-size: 9px;
+  padding: 1px 5px;
+  vertical-align: middle;
 }
 
 .cleanup-reason {
