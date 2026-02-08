@@ -221,7 +221,10 @@
       const time = formatTime(file.modTime);
 
       li.innerHTML = `
-        <div class="file-item-title">${escapeHtml(file.displayName || file.name)}</div>
+        <div class="file-item-header">
+          <div class="file-item-title">${escapeHtml(file.displayName || file.name)}</div>
+          ${file.readOnly ? '' : '<button class="file-item-delete" data-id="' + file.id + '" title="Delete file"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>'}
+        </div>
         <div class="file-item-tags">${buildTagsHtml(file)}</div>
         <div class="file-item-path">${escapeHtml(file.relPath)}</div>
         <div class="file-item-meta">
@@ -344,6 +347,32 @@
           editorPane.style.display = 'none';
           emptyState.style.display = 'flex';
           // Remove from local state
+          state.files = state.files.filter(f => f.id !== file.id);
+          updateView();
+        } catch (err) {
+          toast('Delete failed: ' + err.message, 'error');
+        }
+      }
+    );
+  }
+
+  // ===== Delete from File List =====
+  async function handleDeleteInline(file) {
+    showConfirmModal(
+      'Delete File',
+      'Are you sure you want to delete this file?',
+      [file],
+      async () => {
+        try {
+          await deleteFileApi(file.id);
+          toast('Deleted: ' + (file.displayName || file.name), 'success');
+          // If this was the active file, clear editor
+          if (state.activeFileId === file.id) {
+            state.activeFileId = null;
+            state.activeFile = null;
+            editorPane.style.display = 'none';
+            emptyState.style.display = 'flex';
+          }
           state.files = state.files.filter(f => f.id !== file.id);
           updateView();
         } catch (err) {
@@ -720,6 +749,15 @@
   });
 
   fileList.addEventListener('click', (e) => {
+    // Handle inline delete button
+    const delBtn = e.target.closest('.file-item-delete');
+    if (delBtn) {
+      e.stopPropagation();
+      const fileId = delBtn.dataset.id;
+      const file = state.files.find(f => f.id === fileId);
+      if (file) handleDeleteInline(file);
+      return;
+    }
     const item = e.target.closest('.file-item');
     if (!item) return;
     openFile(item.dataset.id);
