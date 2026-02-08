@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/MojtabaTajik/ClaudeShelf/internal/models"
 	"github.com/MojtabaTajik/ClaudeShelf/internal/scanner"
@@ -43,6 +44,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/files/bulk-delete", s.handleBulkDelete)
 	mux.HandleFunc("/api/files/", s.handleFileByID) // /api/files/{id}
 	mux.HandleFunc("/api/rescan", s.handleRescan)
+	mux.HandleFunc("/api/cleanup", s.handleCleanup)
 	mux.HandleFunc("/api/categories", s.handleCategories)
 
 	// Static files (embedded)
@@ -249,6 +251,84 @@ func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.result)
+}
+
+// staleDays is the threshold after which a file is considered stale.
+const staleDays = 30
+
+// handleCleanup analyzes files and returns cleanup suggestions.
+func (s *Server) handleCleanup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	now := time.Now()
+	var items []models.CleanupItem
+	var totalSize int64
+
+	for _, f := range s.result.Files {
+		if f.ReadOnly {
+			continue
+		}
+
+		// Check for 0-byte files
+		if f.Size == 0 {
+			items = append(items, models.CleanupItem{
+				FileEntry:   f,
+				Reason:      models.ReasonEmptyFile,
+				ReasonLabel: "Empty file (0 bytes)",
+			})
+			totalSize += f.Size
+			continue
+		}
+
+		// Read content to check for empty-content patterns
+		data, err := os.ReadFile(f.Path)
+		if err != nil {
+			continue
+		}
+		trimmed := strings.TrimSpace(string(data))
+
+		if trimmed == "" || trimmed == "[]" || trimmed == "{}" || trimmed == "null" {
+			label := "Empty content"
+			switch trimmed {
+			case "[]":
+				label = "Empty array ([])"
+			case "{}":
+				label = "Empty object ({})"
+			case "null":
+				label = "Null content"
+			case "":
+				label = "Blank file (whitespace only)"
+			}
+			items = append(items, models.CleanupItem{
+				FileEntry:   f,
+				Reason:      models.ReasonEmptyContent,
+				ReasonLabel: label,
+			})
+			totalSize += f.Size
+			continue
+		}
+
+		// Check staleness
+		days := int(now.Sub(f.ModTime).Hours() / 24)
+		if days >= staleDays {
+			items = append(items, models.CleanupItem{
+				FileEntry:   f,
+				Reason:      models.ReasonStale,
+				ReasonLabel: fmt.Sprintf("Not modified in %d days", days),
+				DaysSince:   days,
+			})
+			totalSize += f.Size
+		}
+	}
+
+	writeJSON(w, models.CleanupResult{
+		Items:      items,
+		TotalSize:  totalSize,
+		TotalCount: len(items),
+	})
 }
 
 // handleCategories returns the category definitions.

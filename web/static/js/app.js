@@ -110,6 +110,10 @@
     return api('/api/categories');
   }
 
+  async function fetchCleanup() {
+    return api('/api/cleanup');
+  }
+
   // ===== Tag HTML Builder =====
   function buildTagsHtml(file) {
     let html = '';
@@ -432,8 +436,219 @@
 
   // Close modal on Escape
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modalOverlay.style.display !== 'none') {
-      closeModal();
+    if (e.key === 'Escape') {
+      if (cleanupOverlay.style.display !== 'none') {
+        closeCleanup();
+      } else if (modalOverlay.style.display !== 'none') {
+        closeModal();
+      }
+    }
+  });
+
+  // ===== Cleanup Feature =====
+  const cleanupBtn = $('#cleanup-btn');
+  const cleanupOverlay = $('#cleanup-overlay');
+  const cleanupClose = $('#cleanup-close');
+  const cleanupLoading = $('#cleanup-loading');
+  const cleanupContent = $('#cleanup-content');
+  const cleanupSummary = $('#cleanup-summary');
+  const cleanupGroups = $('#cleanup-groups');
+  const cleanupEmpty = $('#cleanup-empty');
+  const cleanupFooter = $('#cleanup-footer');
+  const cleanupCancel = $('#cleanup-cancel');
+  const cleanupDelete = $('#cleanup-delete');
+  const cleanupSelectedInfo = $('#cleanup-selected-info');
+
+  const cleanupState = {
+    items: [],
+    selected: new Set(),
+  };
+
+  const reasonLabels = {
+    empty_file: 'Empty Files',
+    empty_content: 'Empty Content',
+    stale: 'Stale Files',
+  };
+
+  const reasonDescriptions = {
+    empty_file: 'Files with 0 bytes',
+    empty_content: 'Files containing only [], {}, null, or whitespace',
+    stale: 'Files not modified in 30+ days',
+  };
+
+  cleanupBtn.addEventListener('click', openCleanup);
+  cleanupClose.addEventListener('click', closeCleanup);
+  cleanupCancel.addEventListener('click', closeCleanup);
+  cleanupOverlay.addEventListener('click', (e) => {
+    if (e.target === cleanupOverlay) closeCleanup();
+  });
+
+  async function openCleanup() {
+    cleanupOverlay.style.display = 'flex';
+    cleanupLoading.style.display = 'flex';
+    cleanupContent.style.display = 'none';
+    cleanupFooter.style.display = 'none';
+    cleanupState.items = [];
+    cleanupState.selected.clear();
+
+    try {
+      const result = await fetchCleanup();
+      cleanupState.items = result.items || [];
+      renderCleanupResults(result);
+    } catch (err) {
+      toast('Cleanup analysis failed: ' + err.message, 'error');
+      closeCleanup();
+    }
+  }
+
+  function closeCleanup() {
+    cleanupOverlay.style.display = 'none';
+    cleanupState.items = [];
+    cleanupState.selected.clear();
+  }
+
+  function renderCleanupResults(result) {
+    cleanupLoading.style.display = 'none';
+    cleanupContent.style.display = 'block';
+
+    if (!result.items || result.items.length === 0) {
+      cleanupEmpty.style.display = 'block';
+      cleanupSummary.innerHTML = '';
+      cleanupGroups.innerHTML = '';
+      cleanupFooter.style.display = 'none';
+      return;
+    }
+
+    cleanupEmpty.style.display = 'none';
+    cleanupSummary.innerHTML =
+      '<strong>' + result.totalCount + '</strong> file' + (result.totalCount !== 1 ? 's' : '') +
+      ' suggested for cleanup (' + formatSize(result.totalSize) + ' total)';
+
+    // Group items by reason
+    const groups = {};
+    result.items.forEach(item => {
+      if (!groups[item.reason]) groups[item.reason] = [];
+      groups[item.reason].push(item);
+    });
+
+    cleanupGroups.innerHTML = '';
+    const order = ['empty_file', 'empty_content', 'stale'];
+
+    order.forEach(reason => {
+      const items = groups[reason];
+      if (!items || items.length === 0) return;
+
+      const groupEl = document.createElement('div');
+      groupEl.className = 'cleanup-group';
+
+      const headerEl = document.createElement('div');
+      headerEl.className = 'cleanup-group-header';
+      headerEl.innerHTML =
+        '<div class="cleanup-group-check">' +
+          '<input type="checkbox" class="group-checkbox" data-reason="' + reason + '" checked>' +
+          '<strong>' + (reasonLabels[reason] || reason) + '</strong>' +
+          '<span class="badge">' + items.length + '</span>' +
+        '</div>' +
+        '<span style="color:var(--text-muted);font-size:0.8rem;">' + (reasonDescriptions[reason] || '') + '</span>';
+      groupEl.appendChild(headerEl);
+
+      items.forEach(item => {
+        cleanupState.selected.add(item.id);
+
+        const itemEl = document.createElement('div');
+        itemEl.className = 'cleanup-item';
+        itemEl.innerHTML =
+          '<input type="checkbox" class="item-checkbox" data-id="' + item.id + '" checked>' +
+          '<div class="cleanup-item-info">' +
+            '<span class="cleanup-item-name">' + escapeHtml(item.displayName || item.name) + '</span>' +
+            '<span class="cleanup-item-detail">' + escapeHtml(item.relPath) + '</span>' +
+          '</div>' +
+          '<span class="cleanup-reason reason-' + item.reason + '">' + escapeHtml(item.reasonLabel) + '</span>';
+        groupEl.appendChild(itemEl);
+      });
+
+      cleanupGroups.appendChild(groupEl);
+    });
+
+    // Wire up checkboxes
+    cleanupGroups.addEventListener('change', handleCleanupCheckChange);
+
+    cleanupFooter.style.display = 'flex';
+    updateCleanupSelectedInfo();
+  }
+
+  function handleCleanupCheckChange(e) {
+    const target = e.target;
+
+    if (target.classList.contains('group-checkbox')) {
+      const reason = target.dataset.reason;
+      const group = target.closest('.cleanup-group');
+      const boxes = group.querySelectorAll('.item-checkbox');
+      boxes.forEach(cb => {
+        cb.checked = target.checked;
+        if (target.checked) {
+          cleanupState.selected.add(cb.dataset.id);
+        } else {
+          cleanupState.selected.delete(cb.dataset.id);
+        }
+      });
+    } else if (target.classList.contains('item-checkbox')) {
+      if (target.checked) {
+        cleanupState.selected.add(target.dataset.id);
+      } else {
+        cleanupState.selected.delete(target.dataset.id);
+      }
+      // Update group checkbox
+      const group = target.closest('.cleanup-group');
+      const groupCb = group.querySelector('.group-checkbox');
+      const allBoxes = group.querySelectorAll('.item-checkbox');
+      const allChecked = Array.from(allBoxes).every(cb => cb.checked);
+      const someChecked = Array.from(allBoxes).some(cb => cb.checked);
+      groupCb.checked = allChecked;
+      groupCb.indeterminate = someChecked && !allChecked;
+    }
+
+    updateCleanupSelectedInfo();
+  }
+
+  function updateCleanupSelectedInfo() {
+    const count = cleanupState.selected.size;
+    const size = cleanupState.items
+      .filter(item => cleanupState.selected.has(item.id))
+      .reduce((sum, item) => sum + (item.size || 0), 0);
+    cleanupSelectedInfo.textContent = count + ' file' + (count !== 1 ? 's' : '') + ' selected (' + formatSize(size) + ')';
+    cleanupDelete.disabled = count === 0;
+  }
+
+  cleanupDelete.addEventListener('click', async () => {
+    const ids = Array.from(cleanupState.selected);
+    if (ids.length === 0) return;
+
+    cleanupDelete.disabled = true;
+    cleanupDelete.innerHTML = '<span class="spinner"></span> Deleting...';
+
+    try {
+      const result = await bulkDeleteApi(ids);
+      toast('Cleaned up ' + result.deleted + ' file(s)', 'success');
+      if (result.errors && result.errors.length > 0) {
+        toast(result.errors.length + ' file(s) failed to delete', 'error');
+      }
+      closeCleanup();
+
+      // If active file was deleted, clear editor
+      if (state.activeFileId && ids.includes(state.activeFileId)) {
+        state.activeFileId = null;
+        state.activeFile = null;
+        editorPane.style.display = 'none';
+        emptyState.style.display = 'flex';
+      }
+
+      await loadFiles();
+    } catch (err) {
+      toast('Cleanup delete failed: ' + err.message, 'error');
+    } finally {
+      cleanupDelete.disabled = false;
+      cleanupDelete.innerHTML = 'Delete Selected';
     }
   });
 
