@@ -1,8 +1,8 @@
 # ClaudeShelf
 
-Browse, search, and edit your Claude Code config files — memories, settings, todos, plans, skills, and project configs — from a local web UI.
+A local web UI for browsing, searching, and editing all your Claude Code config files (memories, settings, todos, plans, skills, project configs).
 
-Single binary, no dependencies, cross-platform.
+Single binary, no dependencies, works on Linux/macOS/Windows.
 
 ![ClaudeShelf](assets/preview.png)
 
