@@ -4,6 +4,8 @@ Browse, search, and edit your Claude Code config files — memories, settings, t
 
 Single binary, no dependencies, cross-platform.
 
+![ClaudeShelf](assets/preview.png)
+
 ## Usage
 
 ```bash
