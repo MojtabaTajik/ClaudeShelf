@@ -8,6 +8,7 @@
     categories: [],
     activeCategory: '',
     activeFileId: null,
+    activeFile: null,
     originalContent: '',
     searchQuery: '',
   };
@@ -18,15 +19,39 @@
   const fileList = $('#file-list');
   const searchInput = $('#search-input');
   const rescanBtn = $('#rescan-btn');
+  const deleteAllBtn = $('#delete-all-btn');
   const editorPane = $('#editor-pane');
   const emptyState = $('#empty-state');
   const editorFilename = $('#editor-filename');
+  const editorTags = $('#editor-tags');
   const editorPath = $('#editor-path');
   const editorStatus = $('#editor-status');
   const editorTextarea = $('#editor-textarea');
   const saveBtn = $('#save-btn');
+  const deleteBtn = $('#delete-btn');
   const scanInfo = $('#scan-info');
   const badgeAll = $('#badge-all');
+
+  // Modal refs
+  const modalOverlay = $('#modal-overlay');
+  const modalTitle = $('#modal-title');
+  const modalMessage = $('#modal-message');
+  const modalFileList = $('#modal-file-list');
+  const modalToggleList = $('#modal-toggle-list');
+  const modalCancel = $('#modal-cancel');
+  const modalConfirm = $('#modal-confirm');
+  const modalClose = $('#modal-close');
+
+  // Category label map
+  const categoryLabels = {
+    memory: 'Memory',
+    settings: 'Settings',
+    todos: 'Todos',
+    plans: 'Plans',
+    skills: 'Skills',
+    project: 'Project',
+    other: 'Other',
+  };
 
   // ===== Category icons (SVG paths) =====
   const categoryIcons = {
@@ -49,12 +74,8 @@
     return res.json();
   }
 
-  async function fetchFiles(category = '', search = '') {
-    const params = new URLSearchParams();
-    if (category) params.set('category', category);
-    if (search) params.set('search', search);
-    const query = params.toString();
-    return api('/api/files' + (query ? '?' + query : ''));
+  async function fetchFiles() {
+    return api('/api/files');
   }
 
   async function fetchFile(id) {
@@ -69,6 +90,18 @@
     });
   }
 
+  async function deleteFileApi(id) {
+    return api('/api/files/' + id, { method: 'DELETE' });
+  }
+
+  async function bulkDeleteApi(ids) {
+    return api('/api/files/bulk-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+  }
+
   async function rescan() {
     return api('/api/rescan', { method: 'POST' });
   }
@@ -77,16 +110,35 @@
     return api('/api/categories');
   }
 
+  // ===== Tag HTML Builder =====
+  function buildTagsHtml(file) {
+    let html = '';
+    // Scope tag
+    if (file.scope === 'global') {
+      html += '<span class="tag tag-scope-global">Global</span>';
+    } else if (file.scope === 'project') {
+      html += '<span class="tag tag-scope-project">Project</span>';
+    }
+    // Project name tag
+    if (file.projectName) {
+      html += '<span class="tag tag-project-name">' + escapeHtml(file.projectName) + '</span>';
+    }
+    // Category tag
+    if (file.category && categoryLabels[file.category]) {
+      html += '<span class="tag tag-category">' + categoryLabels[file.category] + '</span>';
+    }
+    return html;
+  }
+
   // ===== Rendering =====
   function renderCategories() {
-    // Keep the "All" button, rebuild the rest
     const allBtn = categoryNav.querySelector('[data-category=""]');
     categoryNav.innerHTML = '';
     categoryNav.appendChild(allBtn);
 
     state.categories.forEach((cat) => {
       const count = state.files.filter(f => f.category === cat.id).length;
-      if (count === 0) return; // hide empty categories
+      if (count === 0) return;
 
       const btn = document.createElement('button');
       btn.className = 'category-btn' + (state.activeCategory === cat.id ? ' active' : '');
@@ -99,7 +151,6 @@
       categoryNav.appendChild(btn);
     });
 
-    // Update "All" badge and active state
     badgeAll.textContent = state.files.length;
     allBtn.classList.toggle('active', state.activeCategory === '');
   }
@@ -109,10 +160,13 @@
 
     if (files.length === 0) {
       fileList.innerHTML = '<li style="padding:20px;text-align:center;color:var(--text-muted);">No files found</li>';
+      deleteAllBtn.style.display = 'none';
       return;
     }
 
-    // Sort: most recently modified first
+    // Show/hide "Delete All" based on visible list
+    deleteAllBtn.style.display = (state.searchQuery || state.activeCategory) ? 'inline-flex' : 'none';
+
     const sorted = [...files].sort((a, b) => new Date(b.modTime) - new Date(a.modTime));
 
     sorted.forEach((file) => {
@@ -120,15 +174,12 @@
       li.className = 'file-item' + (state.activeFileId === file.id ? ' active' : '');
       li.dataset.id = file.id;
 
-      const ext = file.name.includes('.') ? file.name.split('.').pop() : '';
       const size = formatSize(file.size);
       const time = formatTime(file.modTime);
 
       li.innerHTML = `
-        <div class="file-item-name">
-          ${ext ? '<span class="file-ext">' + escapeHtml(ext) + '</span>' : ''}
-          ${escapeHtml(file.name)}
-        </div>
+        <div class="file-item-title">${escapeHtml(file.displayName || file.name)}</div>
+        <div class="file-item-tags">${buildTagsHtml(file)}</div>
         <div class="file-item-path">${escapeHtml(file.relPath)}</div>
         <div class="file-item-meta">
           <span>${size}</span>
@@ -148,7 +199,9 @@
       const q = state.searchQuery.toLowerCase();
       files = files.filter(f =>
         f.name.toLowerCase().includes(q) ||
-        f.relPath.toLowerCase().includes(q)
+        f.relPath.toLowerCase().includes(q) ||
+        (f.displayName && f.displayName.toLowerCase().includes(q)) ||
+        (f.projectName && f.projectName.toLowerCase().includes(q))
       );
     }
     return files;
@@ -158,6 +211,22 @@
     const filtered = getFilteredFiles();
     renderCategories();
     renderFileList(filtered);
+  }
+
+  // Auto-select first file after filtering
+  function autoSelectFirst() {
+    const filtered = getFilteredFiles();
+    const sorted = [...filtered].sort((a, b) => new Date(b.modTime) - new Date(a.modTime));
+    if (sorted.length > 0) {
+      openFile(sorted[0].id);
+    } else {
+      // No files in this category — show empty state
+      state.activeFileId = null;
+      state.activeFile = null;
+      editorPane.style.display = 'none';
+      emptyState.style.display = 'flex';
+      updateView();
+    }
   }
 
   // ===== Editor =====
@@ -170,10 +239,12 @@
 
     try {
       const file = await fetchFile(id);
+      state.activeFile = file;
       emptyState.style.display = 'none';
       editorPane.style.display = 'flex';
 
-      editorFilename.textContent = file.name;
+      editorFilename.textContent = file.displayName || file.name;
+      editorTags.innerHTML = buildTagsHtml(file);
       editorPath.textContent = file.relPath;
       editorTextarea.value = file.content;
       editorTextarea.readOnly = file.readOnly;
@@ -181,6 +252,7 @@
 
       saveBtn.style.display = file.readOnly ? 'none' : 'inline-flex';
       saveBtn.disabled = true;
+      deleteBtn.style.display = file.readOnly ? 'none' : 'inline-flex';
       editorStatus.textContent = file.readOnly ? 'Read-only' : '';
       editorStatus.className = 'editor-status';
     } catch (err) {
@@ -202,8 +274,6 @@
       editorStatus.textContent = 'Saved';
       editorStatus.className = 'editor-status saved';
       toast('File saved successfully', 'success');
-
-      // Refresh file list to update metadata
       await loadFiles();
     } catch (err) {
       toast('Save failed: ' + err.message, 'error');
@@ -212,6 +282,121 @@
       saveBtn.disabled = false;
     }
   }
+
+  // ===== Delete Single File =====
+  async function handleDeleteCurrent() {
+    if (!state.activeFile) return;
+    const file = state.activeFile;
+
+    showConfirmModal(
+      'Delete File',
+      'Are you sure you want to delete this file?',
+      [file],
+      async () => {
+        try {
+          await deleteFileApi(file.id);
+          toast('Deleted: ' + (file.displayName || file.name), 'success');
+          state.activeFileId = null;
+          state.activeFile = null;
+          editorPane.style.display = 'none';
+          emptyState.style.display = 'flex';
+          // Remove from local state
+          state.files = state.files.filter(f => f.id !== file.id);
+          updateView();
+        } catch (err) {
+          toast('Delete failed: ' + err.message, 'error');
+        }
+      }
+    );
+  }
+
+  // ===== Bulk Delete =====
+  async function handleDeleteAll() {
+    const filtered = getFilteredFiles();
+    const deletable = filtered.filter(f => !f.readOnly);
+
+    if (deletable.length === 0) {
+      toast('No deletable files in current view', 'info');
+      return;
+    }
+
+    showConfirmModal(
+      'Delete All Visible Files',
+      'This will permanently delete <strong>' + deletable.length + ' file' + (deletable.length !== 1 ? 's' : '') + '</strong> matching your current filter.',
+      deletable,
+      async () => {
+        try {
+          const ids = deletable.map(f => f.id);
+          const result = await bulkDeleteApi(ids);
+          toast('Deleted ' + result.deleted + ' file(s)', 'success');
+          if (result.errors && result.errors.length > 0) {
+            toast(result.errors.length + ' file(s) failed to delete', 'error');
+          }
+          // Refresh
+          state.activeFileId = null;
+          state.activeFile = null;
+          editorPane.style.display = 'none';
+          emptyState.style.display = 'flex';
+          await loadFiles();
+        } catch (err) {
+          toast('Bulk delete failed: ' + err.message, 'error');
+        }
+      }
+    );
+  }
+
+  // ===== Modal =====
+  let modalCallback = null;
+
+  function showConfirmModal(title, message, files, onConfirm) {
+    modalTitle.textContent = title;
+    modalMessage.innerHTML = message;
+    modalCallback = onConfirm;
+
+    // Build file list
+    modalFileList.innerHTML = '';
+    files.forEach(f => {
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="mfl-name">' + escapeHtml(f.displayName || f.name) + '</span>' + escapeHtml(f.relPath);
+      modalFileList.appendChild(li);
+    });
+
+    modalFileList.style.display = 'none';
+    modalToggleList.textContent = 'Show file list (' + files.length + ')';
+
+    modalOverlay.style.display = 'flex';
+  }
+
+  function closeModal() {
+    modalOverlay.style.display = 'none';
+    modalCallback = null;
+  }
+
+  modalCancel.addEventListener('click', closeModal);
+  modalClose.addEventListener('click', closeModal);
+  modalOverlay.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) closeModal();
+  });
+
+  modalToggleList.addEventListener('click', () => {
+    const visible = modalFileList.style.display !== 'none';
+    modalFileList.style.display = visible ? 'none' : 'block';
+    modalToggleList.textContent = (visible ? 'Show' : 'Hide') + ' file list (' + modalFileList.children.length + ')';
+  });
+
+  modalConfirm.addEventListener('click', () => {
+    if (modalCallback) {
+      modalCallback();
+    }
+    closeModal();
+  });
+
+  // Close modal on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modalOverlay.style.display !== 'none') {
+      closeModal();
+    }
+  });
 
   // ===== Data Loading =====
   async function loadFiles() {
@@ -258,7 +443,7 @@
     const btn = e.target.closest('.category-btn');
     if (!btn) return;
     state.activeCategory = btn.dataset.category;
-    updateView();
+    autoSelectFirst();
   });
 
   fileList.addEventListener('click', (e) => {
@@ -274,6 +459,8 @@
 
   rescanBtn.addEventListener('click', handleRescan);
   saveBtn.addEventListener('click', handleSave);
+  deleteBtn.addEventListener('click', handleDeleteCurrent);
+  deleteAllBtn.addEventListener('click', handleDeleteAll);
 
   editorTextarea.addEventListener('input', () => {
     const modified = editorTextarea.value !== state.originalContent;
