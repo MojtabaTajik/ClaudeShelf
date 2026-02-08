@@ -452,7 +452,7 @@
   const cleanupLoading = $('#cleanup-loading');
   const cleanupContent = $('#cleanup-content');
   const cleanupSummary = $('#cleanup-summary');
-  const cleanupGroups = $('#cleanup-groups');
+  const cleanupTableWrap = $('#cleanup-table-wrap');
   const cleanupEmpty = $('#cleanup-empty');
   const cleanupFooter = $('#cleanup-footer');
   const cleanupCancel = $('#cleanup-cancel');
@@ -514,7 +514,7 @@
     if (!result.items || result.items.length === 0) {
       cleanupEmpty.style.display = 'block';
       cleanupSummary.innerHTML = '';
-      cleanupGroups.innerHTML = '';
+      cleanupTableWrap.innerHTML = '';
       cleanupFooter.style.display = 'none';
       return;
     }
@@ -531,47 +531,45 @@
       groups[item.reason].push(item);
     });
 
-    cleanupGroups.innerHTML = '';
+    // Build table
     const order = ['empty_file', 'empty_content', 'stale'];
+    let tableHtml = '<table class="cleanup-table">' +
+      '<thead><tr>' +
+        '<th><input type="checkbox" id="cleanup-select-all" checked></th>' +
+        '<th>Name</th>' +
+        '<th>Path</th>' +
+        '<th>Reason</th>' +
+      '</tr></thead><tbody>';
 
     order.forEach(reason => {
       const items = groups[reason];
       if (!items || items.length === 0) return;
 
-      const groupEl = document.createElement('div');
-      groupEl.className = 'cleanup-group';
-
-      const headerEl = document.createElement('div');
-      headerEl.className = 'cleanup-group-header';
-      headerEl.innerHTML =
-        '<div class="cleanup-group-check">' +
-          '<input type="checkbox" class="group-checkbox" data-reason="' + reason + '" checked>' +
-          '<strong>' + (reasonLabels[reason] || reason) + '</strong>' +
-          '<span class="badge">' + items.length + '</span>' +
-        '</div>' +
-        '<span style="color:var(--text-muted);font-size:0.8rem;">' + (reasonDescriptions[reason] || '') + '</span>';
-      groupEl.appendChild(headerEl);
+      // Group header row
+      tableHtml += '<tr class="cleanup-group-row">' +
+        '<td><input type="checkbox" class="group-checkbox" data-reason="' + reason + '" checked></td>' +
+        '<td colspan="3"><span class="group-label">' +
+          (reasonLabels[reason] || reason) +
+          ' <span class="badge">' + items.length + '</span>' +
+        '</span><span class="group-desc">' + (reasonDescriptions[reason] || '') + '</span></td>' +
+      '</tr>';
 
       items.forEach(item => {
         cleanupState.selected.add(item.id);
-
-        const itemEl = document.createElement('div');
-        itemEl.className = 'cleanup-item';
-        itemEl.innerHTML =
-          '<input type="checkbox" class="item-checkbox" data-id="' + item.id + '" checked>' +
-          '<div class="cleanup-item-info">' +
-            '<span class="cleanup-item-name">' + escapeHtml(item.displayName || item.name) + '</span>' +
-            '<span class="cleanup-item-detail">' + escapeHtml(item.relPath) + '</span>' +
-          '</div>' +
-          '<span class="cleanup-reason reason-' + item.reason + '">' + escapeHtml(item.reasonLabel) + '</span>';
-        groupEl.appendChild(itemEl);
+        tableHtml += '<tr data-reason="' + reason + '">' +
+          '<td><input type="checkbox" class="item-checkbox" data-id="' + item.id + '" checked></td>' +
+          '<td><span class="cleanup-cell-name">' + escapeHtml(item.displayName || item.name) + '</span></td>' +
+          '<td><span class="cleanup-cell-path" title="' + escapeHtml(item.relPath) + '">' + escapeHtml(item.relPath) + '</span></td>' +
+          '<td><span class="cleanup-reason reason-' + item.reason + '">' + escapeHtml(item.reasonLabel) + '</span></td>' +
+        '</tr>';
       });
-
-      cleanupGroups.appendChild(groupEl);
     });
 
+    tableHtml += '</tbody></table>';
+    cleanupTableWrap.innerHTML = tableHtml;
+
     // Wire up checkboxes
-    cleanupGroups.addEventListener('change', handleCleanupCheckChange);
+    cleanupTableWrap.addEventListener('change', handleCleanupCheckChange);
 
     cleanupFooter.style.display = 'flex';
     updateCleanupSelectedInfo();
@@ -579,12 +577,22 @@
 
   function handleCleanupCheckChange(e) {
     const target = e.target;
+    const table = cleanupTableWrap.querySelector('table');
 
-    if (target.classList.contains('group-checkbox')) {
+    if (target.id === 'cleanup-select-all') {
+      // Toggle all items and group checkboxes
+      table.querySelectorAll('.group-checkbox, .item-checkbox').forEach(cb => {
+        cb.checked = target.checked;
+      });
+      if (target.checked) {
+        cleanupState.items.forEach(item => cleanupState.selected.add(item.id));
+      } else {
+        cleanupState.selected.clear();
+      }
+    } else if (target.classList.contains('group-checkbox')) {
       const reason = target.dataset.reason;
-      const group = target.closest('.cleanup-group');
-      const boxes = group.querySelectorAll('.item-checkbox');
-      boxes.forEach(cb => {
+      // Toggle all item rows belonging to this group
+      table.querySelectorAll('tr[data-reason="' + reason + '"] .item-checkbox').forEach(cb => {
         cb.checked = target.checked;
         if (target.checked) {
           cleanupState.selected.add(cb.dataset.id);
@@ -592,23 +600,34 @@
           cleanupState.selected.delete(cb.dataset.id);
         }
       });
+      syncSelectAll(table);
     } else if (target.classList.contains('item-checkbox')) {
       if (target.checked) {
         cleanupState.selected.add(target.dataset.id);
       } else {
         cleanupState.selected.delete(target.dataset.id);
       }
-      // Update group checkbox
-      const group = target.closest('.cleanup-group');
-      const groupCb = group.querySelector('.group-checkbox');
-      const allBoxes = group.querySelectorAll('.item-checkbox');
-      const allChecked = Array.from(allBoxes).every(cb => cb.checked);
-      const someChecked = Array.from(allBoxes).some(cb => cb.checked);
+      // Update group checkbox for this reason
+      const reason = target.closest('tr').dataset.reason;
+      const groupCb = table.querySelector('.group-checkbox[data-reason="' + reason + '"]');
+      const itemBoxes = table.querySelectorAll('tr[data-reason="' + reason + '"] .item-checkbox');
+      const allChecked = Array.from(itemBoxes).every(cb => cb.checked);
+      const someChecked = Array.from(itemBoxes).some(cb => cb.checked);
       groupCb.checked = allChecked;
       groupCb.indeterminate = someChecked && !allChecked;
+      syncSelectAll(table);
     }
 
     updateCleanupSelectedInfo();
+  }
+
+  function syncSelectAll(table) {
+    const selectAll = table.querySelector('#cleanup-select-all');
+    const allBoxes = table.querySelectorAll('.item-checkbox');
+    const allChecked = Array.from(allBoxes).every(cb => cb.checked);
+    const someChecked = Array.from(allBoxes).some(cb => cb.checked);
+    selectAll.checked = allChecked;
+    selectAll.indeterminate = someChecked && !allChecked;
   }
 
   function updateCleanupSelectedInfo() {
