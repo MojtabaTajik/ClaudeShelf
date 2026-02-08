@@ -6,12 +6,15 @@ Single binary, no dependencies, cross-platform.
 
 ![ClaudeShelf](assets/preview.png)
 
-## Usage
+## Getting Started
+
+Download a ready-to-run binary from the [latest release](https://github.com/MojtabaTajik/ClaudeShelf/releases/latest), or build from source:
 
 ```bash
-# Build and run
 go build -o claudeshelf . && ./claudeshelf
+```
 
+```bash
 # Options
 ./claudeshelf -port 9000              # custom port (default: 8010)
 ./claudeshelf -path /path/to/dir      # scan a specific directory
