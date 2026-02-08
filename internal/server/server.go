@@ -40,6 +40,7 @@ func (s *Server) Start() error {
 
 	// API routes
 	mux.HandleFunc("/api/files", s.handleFiles)
+	mux.HandleFunc("/api/files/bulk-delete", s.handleBulkDelete)
 	mux.HandleFunc("/api/files/", s.handleFileByID) // /api/files/{id}
 	mux.HandleFunc("/api/rescan", s.handleRescan)
 	mux.HandleFunc("/api/categories", s.handleCategories)
@@ -112,6 +113,8 @@ func (s *Server) handleFileByID(w http.ResponseWriter, r *http.Request) {
 		s.readFile(w, entry)
 	case http.MethodPut:
 		s.saveFile(w, r, entry)
+	case http.MethodDelete:
+		s.deleteFile(w, entry)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -159,6 +162,80 @@ func (s *Server) saveFile(w http.ResponseWriter, r *http.Request, entry *models.
 		"success": true,
 		"file":    entry,
 	})
+}
+
+func (s *Server) deleteFile(w http.ResponseWriter, entry *models.FileEntry) {
+	if entry.ReadOnly {
+		http.Error(w, "file is read-only", http.StatusForbidden)
+		return
+	}
+
+	if err := os.Remove(entry.Path); err != nil {
+		http.Error(w, "cannot delete file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Remove from scan results
+	s.removeFile(entry.ID)
+
+	writeJSON(w, map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleBulkDelete deletes multiple files at once.
+// POST /api/files/bulk-delete  {ids: ["id1","id2"]}
+func (s *Server) handleBulkDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req models.BulkDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	var deleted []string
+	var errors []string
+
+	for _, id := range req.IDs {
+		entry := s.findFile(id)
+		if entry == nil {
+			errors = append(errors, id+": not found")
+			continue
+		}
+		if entry.ReadOnly {
+			errors = append(errors, entry.Name+": read-only")
+			continue
+		}
+		if err := os.Remove(entry.Path); err != nil {
+			errors = append(errors, entry.Name+": "+err.Error())
+			continue
+		}
+		deleted = append(deleted, id)
+	}
+
+	// Remove all deleted files from scan results
+	for _, id := range deleted {
+		s.removeFile(id)
+	}
+
+	writeJSON(w, map[string]interface{}{
+		"deleted": len(deleted),
+		"errors":  errors,
+	})
+}
+
+func (s *Server) removeFile(id string) {
+	files := s.result.Files
+	for i := range files {
+		if files[i].ID == id {
+			s.result.Files = append(files[:i], files[i+1:]...)
+			return
+		}
+	}
 }
 
 // handleRescan triggers a fresh scan.

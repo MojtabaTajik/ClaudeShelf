@@ -36,16 +36,32 @@ func AllCategories() []CategoryInfo {
 	}
 }
 
+// Scope indicates whether a file is global or project-scoped.
+type Scope string
+
+const (
+	ScopeGlobal  Scope = "global"
+	ScopeProject Scope = "project"
+)
+
 // FileEntry represents a single discovered Claude file.
 type FileEntry struct {
-	ID       string   `json:"id"`
-	Path     string   `json:"path"`
-	RelPath  string   `json:"relPath"`
-	Name     string   `json:"name"`
-	Category Category `json:"category"`
-	Size     int64    `json:"size"`
-	ModTime  time.Time `json:"modTime"`
-	ReadOnly bool     `json:"readOnly"`
+	ID          string   `json:"id"`
+	Path        string   `json:"path"`
+	RelPath     string   `json:"relPath"`
+	Name        string   `json:"name"`
+	DisplayName string   `json:"displayName"`
+	Category    Category `json:"category"`
+	Scope       Scope    `json:"scope"`
+	ProjectName string   `json:"projectName,omitempty"`
+	Size        int64    `json:"size"`
+	ModTime     time.Time `json:"modTime"`
+	ReadOnly    bool     `json:"readOnly"`
+}
+
+// BulkDeleteRequest is the payload for deleting multiple files.
+type BulkDeleteRequest struct {
+	IDs []string `json:"ids"`
 }
 
 // FileContent is returned when reading a file's contents.

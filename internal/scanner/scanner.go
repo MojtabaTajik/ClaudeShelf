@@ -119,15 +119,20 @@ func (s *Scanner) scanPath(root string, seen map[string]bool) ([]models.FileEntr
 		}
 		seen[absPath] = true
 
+		cat := categorize(absPath, info.Name())
+		scope, projectName := extractScope(absPath)
 		entry := models.FileEntry{
-			ID:       fileID(absPath),
-			Path:     absPath,
-			RelPath:  relativeDisplay(absPath),
-			Name:     info.Name(),
-			Category: categorize(absPath, info.Name()),
-			Size:     info.Size(),
-			ModTime:  info.ModTime(),
-			ReadOnly: !isWritable(absPath),
+			ID:          fileID(absPath),
+			Path:        absPath,
+			RelPath:     relativeDisplay(absPath),
+			Name:        info.Name(),
+			DisplayName: buildDisplayName(absPath, info.Name(), cat, projectName),
+			Category:    cat,
+			Scope:       scope,
+			ProjectName: projectName,
+			Size:        info.Size(),
+			ModTime:     info.ModTime(),
+			ReadOnly:    !isWritable(absPath),
 		}
 		files = append(files, entry)
 		return nil
@@ -205,6 +210,158 @@ func categorize(path, name string) models.Category {
 	}
 
 	return models.CategoryOther
+}
+
+// extractScope determines if a file is global or project-scoped and extracts the project name.
+// Claude encodes project paths like: ~/.claude/projects/-home-user-Projects-MyApp/memory/MEMORY.md
+// The directory name after "projects/" is the encoded project path with "/" replaced by "-".
+func extractScope(absPath string) (models.Scope, string) {
+	// Look for /projects/ in the path which indicates project-scoped files
+	idx := strings.Index(absPath, "/.claude/projects/")
+	if idx == -1 {
+		// Also check for CLAUDE.md files outside ~/.claude
+		if !strings.Contains(absPath, "/.claude/") {
+			return models.ScopeProject, extractProjectFromPath(absPath)
+		}
+		return models.ScopeGlobal, ""
+	}
+
+	// Extract the encoded project directory name
+	after := absPath[idx+len("/.claude/projects/"):]
+	parts := strings.SplitN(after, "/", 2)
+	if len(parts) == 0 || parts[0] == "" {
+		return models.ScopeGlobal, ""
+	}
+
+	encoded := parts[0] // e.g. "-home-user-Projects-MyApp"
+	return models.ScopeProject, decodeProjectName(encoded)
+}
+
+// decodeProjectName extracts a human-readable project name from the encoded directory.
+// "-home-user-Documents-Projects-VulWall-Landing" → "VulWall-Landing"
+func decodeProjectName(encoded string) string {
+	// Replace leading dash, then split by common path separators
+	cleaned := strings.TrimPrefix(encoded, "-")
+	// Split on single dashes that likely represent path separators
+	// The encoded path uses "-" for "/", so we reconstruct and take the last meaningful segments
+	segments := strings.Split(cleaned, "-")
+	if len(segments) == 0 {
+		return encoded
+	}
+
+	// Skip common prefixes: home, user, Users, Documents, Projects, src, dev, etc.
+	skipWords := map[string]bool{
+		"home": true, "users": true, "root": true,
+		"documents": true, "desktop": true, "downloads": true,
+		"src": true, "dev": true, "code": true, "workspace": true, "repos": true, "projects": true,
+		"var": true, "tmp": true, "opt": true, "usr": true, "mnt": true,
+	}
+
+	// Find where the meaningful project name starts
+	start := 0
+	for i, seg := range segments {
+		if skipWords[strings.ToLower(seg)] || len(seg) <= 1 {
+			start = i + 1
+		} else {
+			break
+		}
+	}
+
+	if start >= len(segments) {
+		// All segments were "skip" words — use the last 2
+		if len(segments) >= 2 {
+			start = len(segments) - 2
+		} else {
+			start = 0
+		}
+	}
+
+	result := strings.Join(segments[start:], "-")
+	if result == "" {
+		return encoded
+	}
+	return result
+}
+
+// extractProjectFromPath gets a project name from a non-.claude path (e.g., ~/Projects/MyApp/CLAUDE.md)
+func extractProjectFromPath(absPath string) string {
+	dir := filepath.Dir(absPath)
+	return filepath.Base(dir)
+}
+
+// buildDisplayName creates a human-friendly name for a file.
+func buildDisplayName(absPath, name string, cat models.Category, projectName string) string {
+	nameLower := strings.ToLower(name)
+
+	switch {
+	case nameLower == "memory.md":
+		if projectName != "" {
+			return projectName + " Memory"
+		}
+		return "Global Memory"
+
+	case nameLower == "claude.md" && !strings.Contains(absPath, "/.claude/"):
+		if projectName != "" {
+			return projectName + " Project Config"
+		}
+		return "Project Config"
+
+	case nameLower == "settings.json" && strings.Contains(absPath, "/.claude/"):
+		return "Global Settings"
+
+	case nameLower == ".clauderc":
+		if projectName != "" {
+			return projectName + " RC Config"
+		}
+		return "Claude RC Config"
+
+	case nameLower == "skill.md" || nameLower == "skills.md":
+		// Try to get skill name from parent dir
+		parent := filepath.Base(filepath.Dir(absPath))
+		if parent != "" && parent != "skills" && parent != "." {
+			return titleCase(strings.ReplaceAll(parent, "-", " ")) + " Skill"
+		}
+		return "Skill Definition"
+
+	case cat == models.CategoryTodos:
+		if projectName != "" {
+			return projectName + " Todos"
+		}
+		return "Todos"
+
+	case cat == models.CategoryPlans:
+		if projectName != "" {
+			return projectName + " Plan"
+		}
+		return cleanFileName(name)
+
+	case cat == models.CategoryMemory:
+		// Topic memory files like debugging.md, patterns.md
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		label := titleCase(strings.ReplaceAll(base, "-", " "))
+		if projectName != "" {
+			return projectName + " — " + label
+		}
+		return label
+
+	default:
+		return cleanFileName(name)
+	}
+}
+
+func cleanFileName(name string) string {
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	return titleCase(strings.ReplaceAll(strings.ReplaceAll(base, "-", " "), "_", " "))
+}
+
+func titleCase(s string) string {
+	words := strings.Fields(s)
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 // fileID generates a stable, URL-safe identifier for a file path.

@@ -17,15 +17,19 @@
   --success: #4ade80;
   --warning: #fbbf24;
   --error: #f87171;
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --danger-subtle: rgba(239, 68, 68, 0.12);
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.6);
   --transition: 150ms ease;
   --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --sidebar-width: 300px;
+  --sidebar-width: 320px;
   --header-height: 56px;
 }
 
@@ -63,7 +67,7 @@ body {
   padding: 0 16px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
-  gap: 16px;
+  gap: 12px;
   flex-shrink: 0;
   z-index: 10;
 }
@@ -79,6 +83,9 @@ body {
 
 .header-right {
   flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .logo {
@@ -146,6 +153,11 @@ body {
   white-space: nowrap;
 }
 
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
 .btn-ghost {
   background: transparent;
   color: var(--text-secondary);
@@ -170,6 +182,26 @@ body {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: var(--danger-hover);
+}
+
+.btn-danger-ghost {
+  background: transparent;
+  color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger-ghost:hover {
+  background: var(--danger-subtle);
+  border-color: var(--error);
 }
 
 /* ===== Main Layout ===== */
@@ -269,14 +301,48 @@ body {
   background: var(--accent-subtle);
 }
 
-.file-item-name {
+.file-item-title {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
+  line-height: 1.3;
+}
+
+.file-item-tags {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 3px;
+}
+
+.tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tag-scope-global {
+  background: rgba(124, 110, 240, 0.15);
+  color: #a396ff;
+}
+
+.tag-scope-project {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+}
+
+.tag-category {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.tag-project-name {
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
 }
 
 .file-item-path {
@@ -285,24 +351,15 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
 .file-item-meta {
   display: flex;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 3px;
   font-size: 11px;
   color: var(--text-muted);
-}
-
-.file-ext {
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  text-transform: uppercase;
 }
 
 /* ===== Sidebar Footer ===== */
@@ -361,16 +418,31 @@ body {
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
   flex-shrink: 0;
+  gap: 12px;
 }
 
 .editor-file-info {
   min-width: 0;
+  flex: 1;
+}
+
+.editor-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+  flex-wrap: wrap;
 }
 
 .editor-filename {
   font-size: 15px;
   font-weight: 600;
-  margin-bottom: 2px;
+}
+
+.editor-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 .editor-path {
@@ -382,7 +454,7 @@ body {
 .editor-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -429,6 +501,130 @@ body {
   cursor: default;
 }
 
+/* ===== Modal ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 150ms ease;
+}
+
+.modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 480px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  animation: scaleIn 150ms ease;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color var(--transition);
+}
+
+.modal-close:hover {
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-message {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.modal-message strong {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.modal-file-list-toggle {
+  margin-bottom: 8px;
+}
+
+.modal-file-list {
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.modal-file-list li {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-file-list li:last-child {
+  border-bottom: none;
+}
+
+.modal-file-list li .mfl-name {
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 /* ===== Toast Notifications ===== */
 .toast-container {
   position: fixed;
@@ -465,25 +661,13 @@ body {
 }
 
 @keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes slideOut {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(10px);
-  }
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(10px); }
 }
 
 /* ===== Scrollbar ===== */
@@ -523,8 +707,8 @@ body {
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
   .sidebar {
-    width: 240px;
-    min-width: 240px;
+    width: 260px;
+    min-width: 260px;
   }
 
   .header-center {
