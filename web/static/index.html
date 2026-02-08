@@ -144,18 +144,18 @@
 
   <!-- Cleanup Modal -->
   <div class="modal-overlay" id="cleanup-overlay" style="display:none">
-    <div class="modal modal-wide">
+    <div class="modal modal-cleanup">
       <div class="modal-header">
         <h3 class="modal-title">Cleanup Suggestions</h3>
         <button class="modal-close" id="cleanup-close">&times;</button>
       </div>
-      <div class="modal-body" id="cleanup-body">
+      <div class="modal-body cleanup-modal-body" id="cleanup-body">
         <div class="cleanup-loading" id="cleanup-loading">
           <span class="spinner"></span> Analyzing files...
         </div>
         <div id="cleanup-content" style="display:none">
           <div class="cleanup-summary" id="cleanup-summary"></div>
-          <div class="cleanup-groups" id="cleanup-groups"></div>
+          <div class="cleanup-table-wrap" id="cleanup-table-wrap"></div>
           <div class="cleanup-empty" id="cleanup-empty" style="display:none">
             <p>All clean! No files suggested for cleanup.</p>
           </div>
