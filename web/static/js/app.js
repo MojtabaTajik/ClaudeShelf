@@ -130,28 +130,67 @@
     return html;
   }
 
+  // ===== Helpers =====
+  function sumSize(files) {
+    return files.reduce((sum, f) => sum + (f.size || 0), 0);
+  }
+
+  // Get files matching only the search query (no category filter).
+  // Used so category counts reflect search results.
+  function getSearchFilteredFiles() {
+    let files = state.files;
+    if (state.searchQuery) {
+      const q = state.searchQuery.toLowerCase();
+      files = files.filter(f =>
+        f.name.toLowerCase().includes(q) ||
+        f.relPath.toLowerCase().includes(q) ||
+        (f.displayName && f.displayName.toLowerCase().includes(q)) ||
+        (f.projectName && f.projectName.toLowerCase().includes(q))
+      );
+    }
+    return files;
+  }
+
   // ===== Rendering =====
   function renderCategories() {
     const allBtn = categoryNav.querySelector('[data-category=""]');
     categoryNav.innerHTML = '';
     categoryNav.appendChild(allBtn);
 
-    state.categories.forEach((cat) => {
-      const count = state.files.filter(f => f.category === cat.id).length;
-      if (count === 0) return;
+    // Use search-filtered files (but NOT category-filtered) so counts react to search
+    const base = getSearchFilteredFiles();
 
+    state.categories.forEach((cat) => {
+      const catFiles = base.filter(f => f.category === cat.id);
+      if (catFiles.length === 0) return;
+
+      const totalSize = formatSize(sumSize(catFiles));
       const btn = document.createElement('button');
       btn.className = 'category-btn' + (state.activeCategory === cat.id ? ' active' : '');
       btn.dataset.category = cat.id;
       btn.innerHTML = `
         ${categoryIcons[cat.id] || categoryIcons.other}
-        ${cat.label}
-        <span class="badge">${count}</span>
+        <span class="category-label">${cat.label}</span>
+        <span class="category-size">${totalSize}</span>
+        <span class="badge">${catFiles.length}</span>
       `;
       categoryNav.appendChild(btn);
     });
 
-    badgeAll.textContent = state.files.length;
+    const allSize = formatSize(sumSize(base));
+    badgeAll.textContent = base.length;
+    // Update the "All" button to include size
+    const allLabel = allBtn.querySelector('.category-size');
+    if (allLabel) {
+      allLabel.textContent = allSize;
+    } else {
+      // First render — inject the size span
+      const badgeEl = allBtn.querySelector('.badge');
+      const sizeSpan = document.createElement('span');
+      sizeSpan.className = 'category-size';
+      sizeSpan.textContent = allSize;
+      allBtn.insertBefore(sizeSpan, badgeEl);
+    }
     allBtn.classList.toggle('active', state.activeCategory === '');
   }
 
