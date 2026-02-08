@@ -22,6 +22,12 @@ func New(rootPath string) *Scanner {
 	return &Scanner{rootPath: rootPath}
 }
 
+// normPath normalises a path to forward slashes for consistent string matching
+// across platforms. Only used for comparisons, not for actual file operations.
+func normPath(p string) string {
+	return strings.ReplaceAll(p, "\\", "/")
+}
+
 // Scan discovers all Claude-related files and returns a ScanResult.
 func (s *Scanner) Scan() (*models.ScanResult, error) {
 	var files []models.FileEntry
@@ -56,6 +62,16 @@ func (s *Scanner) searchPaths() []string {
 	// Primary Claude config directory
 	paths = append(paths, filepath.Join(home, ".claude"))
 
+	// On Windows, also check %APPDATA%\Claude
+	if runtime.GOOS == "windows" {
+		if appData := os.Getenv("APPDATA"); appData != "" {
+			paths = append(paths, filepath.Join(appData, "Claude"))
+		}
+		if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+			paths = append(paths, filepath.Join(localAppData, "Claude"))
+		}
+	}
+
 	// Common project locations where CLAUDE.md might exist
 	projectDirs := []string{
 		filepath.Join(home, "projects"),
@@ -65,6 +81,14 @@ func (s *Scanner) searchPaths() []string {
 		filepath.Join(home, "workspace"),
 		filepath.Join(home, "repos"),
 		home, // scan home dir itself for CLAUDE.md
+	}
+
+	// On Windows, also check common project locations on other drives
+	if runtime.GOOS == "windows" {
+		projectDirs = append(projectDirs,
+			filepath.Join(home, "Documents"),
+			filepath.Join(home, "Desktop"),
+		)
 	}
 
 	for _, d := range projectDirs {
@@ -81,7 +105,9 @@ func (s *Scanner) scanPath(root string, seen map[string]bool) ([]models.FileEntr
 	var files []models.FileEntry
 
 	// Determine if this is the ~/.claude directory itself
-	isClaudeDir := strings.HasSuffix(root, ".claude") || strings.HasSuffix(root, ".claude/")
+	normRoot := normPath(root)
+	isClaudeDir := strings.HasSuffix(normRoot, ".claude") || strings.HasSuffix(normRoot, ".claude/") ||
+		strings.HasSuffix(strings.ToLower(normRoot), "/claude") // Windows %APPDATA%\Claude
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -102,9 +128,11 @@ func (s *Scanner) scanPath(root string, seen map[string]bool) ([]models.FileEntr
 		}
 
 		// Limit depth for non-.claude directories to avoid deep scanning
-		if !isClaudeDir && !strings.Contains(path, ".claude") {
+		normP := normPath(path)
+		if !isClaudeDir && !strings.Contains(normP, ".claude") {
 			rel, _ := filepath.Rel(root, path)
-			if strings.Count(rel, string(filepath.Separator)) > 1 {
+			normRel := normPath(rel)
+			if strings.Count(normRel, "/") > 1 {
 				return nil
 			}
 		}
@@ -150,9 +178,9 @@ func isClaudeFile(path, name string) bool {
 		return true
 	}
 
-	// Files inside a .claude directory
-	if strings.Contains(path, ".claude"+string(filepath.Separator)) ||
-		strings.Contains(path, ".claude/") {
+	// Files inside a .claude (or Claude on Windows) directory
+	np := normPath(path)
+	if strings.Contains(np, ".claude/") || strings.Contains(strings.ToLower(np), "/claude/") {
 		// Include meaningful files, skip conversation logs (large .jsonl files)
 		ext := strings.ToLower(filepath.Ext(name))
 		switch ext {
@@ -216,24 +244,26 @@ func categorize(path, name string) models.Category {
 // Claude encodes project paths like: ~/.claude/projects/-home-user-Projects-MyApp/memory/MEMORY.md
 // The directory name after "projects/" is the encoded project path with "/" replaced by "-".
 func extractScope(absPath string) (models.Scope, string) {
+	np := normPath(absPath)
+
 	// Look for /projects/ in the path which indicates project-scoped files
-	idx := strings.Index(absPath, "/.claude/projects/")
+	idx := strings.Index(np, "/.claude/projects/")
 	if idx == -1 {
 		// Also check for CLAUDE.md files outside ~/.claude
-		if !strings.Contains(absPath, "/.claude/") {
+		if !strings.Contains(np, "/.claude/") && !strings.Contains(strings.ToLower(np), "/claude/") {
 			return models.ScopeProject, extractProjectFromPath(absPath)
 		}
 		return models.ScopeGlobal, ""
 	}
 
 	// Extract the encoded project directory name
-	after := absPath[idx+len("/.claude/projects/"):]
+	after := np[idx+len("/.claude/projects/"):]
 	parts := strings.SplitN(after, "/", 2)
 	if len(parts) == 0 || parts[0] == "" {
 		return models.ScopeGlobal, ""
 	}
 
-	encoded := parts[0] // e.g. "-home-user-Projects-MyApp"
+	encoded := parts[0] // e.g. "-home-user-Projects-MyApp" or "-C-Users-john-Projects-MyApp"
 	return models.ScopeProject, decodeProjectName(encoded)
 }
 
@@ -250,11 +280,14 @@ func decodeProjectName(encoded string) string {
 	}
 
 	// Skip common prefixes: home, user, Users, Documents, Projects, src, dev, etc.
+	// Also skips single-char segments which covers Windows drive letters (C, D, E, ...)
 	skipWords := map[string]bool{
 		"home": true, "users": true, "root": true,
 		"documents": true, "desktop": true, "downloads": true,
 		"src": true, "dev": true, "code": true, "workspace": true, "repos": true, "projects": true,
 		"var": true, "tmp": true, "opt": true, "usr": true, "mnt": true,
+		// Windows specific
+		"program files": true, "appdata": true, "local": true, "roaming": true,
 	}
 
 	// Find where the meaningful project name starts
@@ -292,6 +325,7 @@ func extractProjectFromPath(absPath string) string {
 // buildDisplayName creates a human-friendly name for a file.
 func buildDisplayName(absPath, name string, cat models.Category, projectName string) string {
 	nameLower := strings.ToLower(name)
+	np := normPath(absPath)
 
 	switch {
 	case nameLower == "memory.md":
@@ -300,13 +334,13 @@ func buildDisplayName(absPath, name string, cat models.Category, projectName str
 		}
 		return "Global Memory"
 
-	case nameLower == "claude.md" && !strings.Contains(absPath, "/.claude/"):
+	case nameLower == "claude.md" && !strings.Contains(np, "/.claude/"):
 		if projectName != "" {
 			return projectName + " Project Config"
 		}
 		return "Project Config"
 
-	case nameLower == "settings.json" && strings.Contains(absPath, "/.claude/"):
+	case nameLower == "settings.json" && strings.Contains(np, "/.claude/"):
 		return "Global Settings"
 
 	case nameLower == ".clauderc":
@@ -370,13 +404,14 @@ func fileID(path string) string {
 	return fmt.Sprintf("%x", h[:8])
 }
 
-// relativeDisplay returns a display-friendly relative path.
+// relativeDisplay returns a display-friendly relative path using forward slashes.
 func relativeDisplay(absPath string) string {
 	home := homeDir()
 	if strings.HasPrefix(absPath, home) {
-		return "~" + absPath[len(home):]
+		rel := "~" + absPath[len(home):]
+		return normPath(rel) // normalise to forward slashes for display
 	}
-	return absPath
+	return normPath(absPath)
 }
 
 // isWritable checks if the file can be written to.
