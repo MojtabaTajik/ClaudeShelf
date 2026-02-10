@@ -97,6 +97,14 @@ func (s *Scanner) searchPaths() []string {
 		}
 	}
 
+	// Also scan current working directory for project-level .claude/
+	if cwd, err := os.Getwd(); err == nil {
+		cwdClaude := filepath.Join(cwd, ".claude")
+		if info, err := os.Stat(cwdClaude); err == nil && info.IsDir() {
+			paths = append(paths, cwdClaude)
+		}
+	}
+
 	return paths
 }
 
@@ -186,18 +194,6 @@ func isClaudeFile(path, name string) bool {
 		switch ext {
 		case ".md", ".json", ".yaml", ".yml", ".txt", ".toml":
 			return true
-		case ".jsonl":
-			// Include .jsonl files only in subagent directories (agent conversation logs)
-			if strings.Contains(npLower, "/subagents/") {
-				return true
-			}
-			return false
-		case ".sh":
-			// Include shell scripts in session-env (agent session snapshots)
-			if strings.Contains(npLower, "/session-env/") {
-				return true
-			}
-			return false
 		}
 		// Also include files with no extension that might be configs
 		if ext == "" && !strings.HasPrefix(name, ".") {
@@ -214,8 +210,8 @@ func categorize(path, name string) models.Category {
 	pathLower := strings.ToLower(np)
 	nameLower := strings.ToLower(name)
 
-	// Agent files — subagent logs and session environment data
-	if strings.Contains(pathLower, "/subagents/") || strings.Contains(pathLower, "/session-env/") {
+	// Agent definitions — .md files in .claude/agents/ or project .claude/agents/
+	if strings.Contains(pathLower, "/agents/") && strings.HasSuffix(nameLower, ".md") {
 		return models.CategoryAgents
 	}
 
@@ -264,10 +260,18 @@ func categorize(path, name string) models.Category {
 func extractScope(absPath string) (models.Scope, string) {
 	np := normPath(absPath)
 
+	home := normPath(homeDir())
+
 	// Look for /projects/ in the path which indicates project-scoped files
 	idx := strings.Index(np, "/.claude/projects/")
 	if idx == -1 {
-		// Also check for CLAUDE.md files outside ~/.claude
+		// Check for project-level .claude/ dirs (e.g. ~/MyProject/.claude/agents/foo.md)
+		// These are NOT inside ~/.claude/ but inside a project directory
+		homeClaudePrefix := home + "/.claude/"
+		if strings.Contains(np, "/.claude/") && !strings.HasPrefix(np, homeClaudePrefix) {
+			return models.ScopeProject, extractProjectFromPath(absPath)
+		}
+		// Files completely outside any .claude dir (e.g. ~/MyProject/CLAUDE.md)
 		if !strings.Contains(np, "/.claude/") && !strings.Contains(strings.ToLower(np), "/claude/") {
 			return models.ScopeProject, extractProjectFromPath(absPath)
 		}
@@ -334,8 +338,19 @@ func decodeProjectName(encoded string) string {
 	return result
 }
 
-// extractProjectFromPath gets a project name from a non-.claude path (e.g., ~/Projects/MyApp/CLAUDE.md)
+// extractProjectFromPath gets a project name from a non-global-claude path.
+// For ~/Projects/MyApp/CLAUDE.md → "MyApp"
+// For ~/Projects/MyApp/.claude/agents/foo.md → "MyApp"
 func extractProjectFromPath(absPath string) string {
+	np := normPath(absPath)
+	// If inside a project-level .claude dir, find the project root above .claude/
+	if idx := strings.Index(np, "/.claude/"); idx != -1 {
+		projectDir := np[:idx]
+		parts := strings.Split(projectDir, "/")
+		if len(parts) > 0 {
+			return parts[len(parts)-1]
+		}
+	}
 	dir := filepath.Dir(absPath)
 	return filepath.Base(dir)
 }
@@ -376,30 +391,13 @@ func buildDisplayName(absPath, name string, cat models.Category, projectName str
 		return "Skill Definition"
 
 	case cat == models.CategoryAgents:
-		if strings.Contains(np, "/subagents/") {
-			// agent-a0520db.jsonl → "Subagent a0520db"
-			base := strings.TrimSuffix(name, filepath.Ext(name))
-			label := strings.TrimPrefix(base, "agent-")
-			if label == base {
-				label = base
-			}
-			if projectName != "" {
-				return projectName + " Agent " + label
-			}
-			return "Subagent " + label
+		// code-reviewer.md → "Code Reviewer Agent"
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		label := titleCase(strings.ReplaceAll(strings.ReplaceAll(base, "-", " "), "_", " "))
+		if projectName != "" {
+			return projectName + " — " + label + " Agent"
 		}
-		if strings.Contains(np, "/session-env/") {
-			if projectName != "" {
-				return projectName + " Session Env"
-			}
-			// Try to get session ID from parent dir
-			parent := filepath.Base(filepath.Dir(absPath))
-			if len(parent) > 8 {
-				return "Session Env " + parent[:8]
-			}
-			return "Session Env"
-		}
-		return cleanFileName(name)
+		return label + " Agent"
 
 	case cat == models.CategoryTodos:
 		if projectName != "" {
