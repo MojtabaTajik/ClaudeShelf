@@ -32,7 +32,7 @@ func AllCategories() []CategoryInfo {
 		{CategoryTodos, "Todos", "Task and todo tracking files", "checklist"},
 		{CategoryPlans, "Plans", "Planning and strategy documents", "map"},
 		{CategorySkills, "Skills", "Custom skill definitions", "sparkles"},
-		{CategoryAgents, "Agents", "Subagent logs and session environment data", "bot"},
+		{CategoryAgents, "Agents", "Custom agent definitions (.md with YAML frontmatter)", "bot"},
 		{CategoryProject, "Project Config", "CLAUDE.md and .clauderc project files", "folder"},
 		{CategoryOther, "Other", "Other Claude-related files", "file"},
 	}
