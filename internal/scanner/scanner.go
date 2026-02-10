@@ -194,6 +194,12 @@ func isClaudeFile(path, name string) bool {
 		switch ext {
 		case ".md", ".json", ".yaml", ".yml", ".txt", ".toml":
 			return true
+		case ".log":
+			// Log files in debug directories
+			return true
+		case ".sh":
+			// Shell scripts (hooks, snapshots)
+			return true
 		}
 		// Also include files with no extension that might be configs
 		if ext == "" && !strings.HasPrefix(name, ".") {
@@ -215,34 +221,45 @@ func categorize(path, name string) models.Category {
 		return models.CategoryAgents
 	}
 
+	// Debug logs
+	if strings.Contains(pathLower, "/debug/") {
+		return models.CategoryDebug
+	}
+
 	// Memory files
-	if strings.Contains(pathLower, "memory") || nameLower == "memory.md" {
+	if strings.Contains(pathLower, "/memory/") || nameLower == "memory.md" {
 		return models.CategoryMemory
 	}
 	if nameLower == "claude.md" && !strings.Contains(pathLower, ".claude") {
 		return models.CategoryProject
 	}
-	if nameLower == "claude.md" && strings.Contains(pathLower, "memory") {
-		return models.CategoryMemory
-	}
 
-	// Settings
+	// Settings — config files, hook scripts, stats cache
 	if nameLower == "settings.json" || nameLower == ".clauderc" {
 		return models.CategorySettings
 	}
+	if strings.HasSuffix(nameLower, ".sh") && strings.Contains(pathLower, "/.claude/") {
+		// Hook scripts like stop-hook-git-check.sh in .claude/ root
+		if !strings.Contains(pathLower, "/shell-snapshots/") {
+			return models.CategorySettings
+		}
+	}
+	if nameLower == "stats-cache.json" {
+		return models.CategorySettings
+	}
 
-	// Todos
-	if strings.Contains(pathLower, "todos") || strings.Contains(pathLower, "todo") {
+	// Todos & Tasks (tasks/ is the newer dir, todos/ is the older one)
+	if strings.Contains(pathLower, "/todos/") || strings.Contains(pathLower, "/tasks/") {
 		return models.CategoryTodos
 	}
 
 	// Plans
-	if strings.Contains(pathLower, "plans") || strings.Contains(pathLower, "plan") {
+	if strings.Contains(pathLower, "/plans/") {
 		return models.CategoryPlans
 	}
 
 	// Skills
-	if strings.Contains(pathLower, "skills") || strings.Contains(pathLower, "skill") {
+	if strings.Contains(pathLower, "/skills/") {
 		return models.CategorySkills
 	}
 
@@ -389,6 +406,16 @@ func buildDisplayName(absPath, name string, cat models.Category, projectName str
 			return titleCase(strings.ReplaceAll(parent, "-", " ")) + " Skill"
 		}
 		return "Skill Definition"
+
+	case cat == models.CategoryDebug:
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		label := titleCase(strings.ReplaceAll(strings.ReplaceAll(base, "-", " "), "_", " "))
+		return "Debug — " + label
+
+	case cat == models.CategorySettings && strings.HasSuffix(nameLower, ".sh"):
+		// Hook scripts: stop-hook-git-check.sh → "Stop Hook Git Check"
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		return titleCase(strings.ReplaceAll(strings.ReplaceAll(base, "-", " "), "_", " "))
 
 	case cat == models.CategoryAgents:
 		// code-reviewer.md → "Code Reviewer Agent"

@@ -12,6 +12,7 @@ const (
 	CategoryPlans    Category = "plans"
 	CategorySkills   Category = "skills"
 	CategoryAgents   Category = "agents"
+	CategoryDebug    Category = "debug"
 	CategoryProject  Category = "project"
 	CategoryOther    Category = "other"
 )
@@ -33,6 +34,7 @@ func AllCategories() []CategoryInfo {
 		{CategoryPlans, "Plans", "Planning and strategy documents", "map"},
 		{CategorySkills, "Skills", "Custom skill definitions", "sparkles"},
 		{CategoryAgents, "Agents", "Custom agent definitions (.md with YAML frontmatter)", "bot"},
+		{CategoryDebug, "Debug", "Debug and diagnostic log files", "bug"},
 		{CategoryProject, "Project Config", "CLAUDE.md and .clauderc project files", "folder"},
 		{CategoryOther, "Other", "Other Claude-related files", "file"},
 	}
