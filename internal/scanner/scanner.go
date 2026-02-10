@@ -180,12 +180,24 @@ func isClaudeFile(path, name string) bool {
 
 	// Files inside a .claude (or Claude on Windows) directory
 	np := normPath(path)
-	if strings.Contains(np, ".claude/") || strings.Contains(strings.ToLower(np), "/claude/") {
-		// Include meaningful files, skip conversation logs (large .jsonl files)
+	npLower := strings.ToLower(np)
+	if strings.Contains(np, ".claude/") || strings.Contains(npLower, "/claude/") {
 		ext := strings.ToLower(filepath.Ext(name))
 		switch ext {
 		case ".md", ".json", ".yaml", ".yml", ".txt", ".toml":
 			return true
+		case ".jsonl":
+			// Include .jsonl files only in subagent directories (agent conversation logs)
+			if strings.Contains(npLower, "/subagents/") {
+				return true
+			}
+			return false
+		case ".sh":
+			// Include shell scripts in session-env (agent session snapshots)
+			if strings.Contains(npLower, "/session-env/") {
+				return true
+			}
+			return false
 		}
 		// Also include files with no extension that might be configs
 		if ext == "" && !strings.HasPrefix(name, ".") {
@@ -198,8 +210,14 @@ func isClaudeFile(path, name string) bool {
 
 // categorize assigns a category based on file path and name.
 func categorize(path, name string) models.Category {
-	pathLower := strings.ToLower(path)
+	np := normPath(path)
+	pathLower := strings.ToLower(np)
 	nameLower := strings.ToLower(name)
+
+	// Agent files — subagent logs and session environment data
+	if strings.Contains(pathLower, "/subagents/") || strings.Contains(pathLower, "/session-env/") {
+		return models.CategoryAgents
+	}
 
 	// Memory files
 	if strings.Contains(pathLower, "memory") || nameLower == "memory.md" {
@@ -282,7 +300,7 @@ func decodeProjectName(encoded string) string {
 	// Skip common prefixes: home, user, Users, Documents, Projects, src, dev, etc.
 	// Also skips single-char segments which covers Windows drive letters (C, D, E, ...)
 	skipWords := map[string]bool{
-		"home": true, "users": true, "root": true,
+		"home": true, "user": true, "users": true, "root": true,
 		"documents": true, "desktop": true, "downloads": true,
 		"src": true, "dev": true, "code": true, "workspace": true, "repos": true, "projects": true,
 		"var": true, "tmp": true, "opt": true, "usr": true, "mnt": true,
@@ -356,6 +374,32 @@ func buildDisplayName(absPath, name string, cat models.Category, projectName str
 			return titleCase(strings.ReplaceAll(parent, "-", " ")) + " Skill"
 		}
 		return "Skill Definition"
+
+	case cat == models.CategoryAgents:
+		if strings.Contains(np, "/subagents/") {
+			// agent-a0520db.jsonl → "Subagent a0520db"
+			base := strings.TrimSuffix(name, filepath.Ext(name))
+			label := strings.TrimPrefix(base, "agent-")
+			if label == base {
+				label = base
+			}
+			if projectName != "" {
+				return projectName + " Agent " + label
+			}
+			return "Subagent " + label
+		}
+		if strings.Contains(np, "/session-env/") {
+			if projectName != "" {
+				return projectName + " Session Env"
+			}
+			// Try to get session ID from parent dir
+			parent := filepath.Base(filepath.Dir(absPath))
+			if len(parent) > 8 {
+				return "Session Env " + parent[:8]
+			}
+			return "Session Env"
+		}
+		return cleanFileName(name)
 
 	case cat == models.CategoryTodos:
 		if projectName != "" {
