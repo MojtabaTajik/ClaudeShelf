@@ -11,6 +11,7 @@ const (
 	CategoryTodos    Category = "todos"
 	CategoryPlans    Category = "plans"
 	CategorySkills   Category = "skills"
+	CategoryAgents   Category = "agents"
 	CategoryProject  Category = "project"
 	CategoryOther    Category = "other"
 )
@@ -31,6 +32,7 @@ func AllCategories() []CategoryInfo {
 		{CategoryTodos, "Todos", "Task and todo tracking files", "checklist"},
 		{CategoryPlans, "Plans", "Planning and strategy documents", "map"},
 		{CategorySkills, "Skills", "Custom skill definitions", "sparkles"},
+		{CategoryAgents, "Agents", "Subagent logs and session environment data", "bot"},
 		{CategoryProject, "Project Config", "CLAUDE.md and .clauderc project files", "folder"},
 		{CategoryOther, "Other", "Other Claude-related files", "file"},
 	}
